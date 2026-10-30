@@ -1,0 +1,40 @@
+name: Build Laccaz OS 0.9.5
+on: [workflow_dispatch]
+jobs:
+  iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare source
+        run: |
+          if [ -f laccaz-os-0.9.5-macdock.zip ]; then
+            unzip -q laccaz-os-0.9.5-macdock.zip -d source
+            echo "BUILD_ROOT=source/laccaz-os" >> "$GITHUB_ENV"
+          elif [ -f auto/config ] && [ -f scripts/build.sh ]; then
+            echo "BUILD_ROOT=." >> "$GITHUB_ENV"
+          else
+            echo "Upload laccaz-os-0.9.5-macdock.zip intact to the repository root."
+            exit 1
+          fi
+      - name: Build in Debian 13 container
+        run: |
+          docker run --rm --privileged -v "$PWD/$BUILD_ROOT:/work" -w /work debian:trixie bash -c '
+            apt-get update && apt-get install -y live-build debootstrap debian-archive-keyring xorriso squashfs-tools dosfstools mtools syslinux-common isolinux grub-pc-bin grub-efi-amd64-bin ca-certificates &&
+            bash scripts/build.sh'
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: laccaz-os-0.9.5-amd64
+          path: |
+            ${{ env.BUILD_ROOT }}/artifacts/laccaz-os-0.9.5-amd64.iso
+            ${{ env.BUILD_ROOT }}/artifacts/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload logs
+        if: always() && env.BUILD_ROOT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: ${{ env.BUILD_ROOT }}/artifacts/*.log
+          if-no-files-found: ignore
